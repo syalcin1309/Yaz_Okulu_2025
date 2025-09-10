@@ -1,0 +1,260 @@
+#######################################################################
+# Bu calisma basit bir makine ogrenimi icin veri seti hazirlanmasi ve #
+# uygulanmasini icermektedir.                                         # 
+#######################################################################
+
+#######################################################################
+# veri setinin MO uygulamasina hazirlanmasi
+
+#kullanilacak kutuphanelerin listelenmesi
+#kullanilacak kutuphaneler yoksa oncelikle sisteme indirilmelidir
+#kutuphaneler sisteme indirilirken kullanilan python versiyonu dikate alinmalidir
+#ornegin pip3 install pandas
+
+import matplotlib.pyplot as plt 
+import pandas as pd
+import seaborn as sns
+import numpy as np
+import math  
+
+#tekrar elde edilebilir sonuc elde etmek icin mutlaka sayi atamasi
+seed = 7
+np.random.seed(seed)
+#######################################################################
+
+
+
+#######################################################################
+#veri setinin dataframe formatinda alinmasi
+
+#veri dosyasi .csv formatindadir
+#dataframe olarak veriyi almak analizlerde islem yapmayi kolaylastirir
+
+all_pairs_100K = pd.read_csv('dielectron.csv')
+#veri yapisini anlama
+all_pairs_100K.shape 
+#(100000,19)
+
+#veri setinden bos degerlerin temizlenmesi
+all_pairs_100K_withoutna=all_pairs_100K.dropna(axis=0)
+#veri yapisini anlama
+all_pairs_100K_withoutna.shape
+#(99915,19)
+
+#veri setinde bulunan ozellikleri goruntuleme
+all_pairs_100K_withoutna.head()
+#Run, Event, E1, px1, py1, pz1, pt1, eta1, phi1, Q1, E2, px2, py2, pz2, pt2, eta2, phi2, Q2, M
+#######################################################################
+
+
+
+
+#######################################################################
+#veri setinde bulunan tum yuklu lepton ciftlerinin kutle dagilimini histogram seklinde cizdirme
+
+#grafik olarak histogram tercih edilmesi parcacik ozelliklerini en iyi anlama formati olmasi sebebindendir.
+plt.hist(all_pairs_100K_withoutna['M'], bins=110,histtype='step',fill=False,lw=2,edgecolor='black')
+
+#eksen isimlerini ekleme
+xlab1 =  'Mass [GeVc$^2$]'
+ylab1 = '(dNdm)(1 GeVc$^2$)'#changed since our new region is 8-12GeV
+plt.xlabel(xlab1,fontsize=40)
+plt.ylabel(ylab1,fontsize=40)
+plt.yticks(fontsize=36)
+plt.xticks(fontsize=36)
+
+#baslik ekleme
+title4 = 'Mass Distribution of Lepton Pairs for 2 - 110 GeVc$^2$'
+plt.title(title4)
+
+#histogram cizdirme
+plt.show()
+#######################################################################
+
+
+
+
+#######################################################################
+#veri set'nde siniflandirma yapilmasi
+
+#pozitif sinif bir elektron ve pozitrondan olusan olay (farkli yuklu lepton ciftleri)
+#negatif sinif ayni yuklu lepton ciftleri
+
+#pozitif sinif
+electron_positron_pairs=all_pairs_100K_withoutna[(all_pairs_100K_withoutna['Q1']!= all_pairs_100K_withoutna['Q2'])]
+electron_positron_pairs.shape
+#(56969, 19) adet elektron pozitron ciftimiz veri setimizde bulunuyor
+
+#pozitif sinifa 1 etiketini atama
+electron_positron_pairs_labeled=electron_positron_pairs.assign(class_label='1')
+electron_positron_pairs_labeled.shape
+#(56969, 20) etiket ile birlikte ozellik sayisi artti
+
+#negatif sinif
+other_pairs=all_pairs_100K_withoutna[(all_pairs_100K_withoutna['Q1']== all_pairs_100K_withoutna['Q2'])]
+other_pairs.shape
+#(42946, 19) adet ayni yuklu lepton ciftimiz var
+
+#negatif sinifa etiket atama
+other_pairs_labeled=other_pairs.assign(class_label='0')
+other_pairs_labeled.shape
+#(42946, 20) etiket ile birlikte ozellik sayisi artti
+
+#toplam veri sayisi saglaniyor
+#56969+42946=99915
+
+#etiketli verilerin birbirine eklenip uygulama icin hazir hale gelmesi
+total=electron_positron_pairs_labeled.append(other_pairs_labeled)
+total.shape
+#(99915, 20)
+
+#veri setini homojen duruma getirme
+shuffled_total=total.sample(frac=1)
+#(99915, 20)
+
+
+#hazirlanmis veri setini yazdirma
+#basliklarin duzenlenmesi
+shuffled_total = shuffled_total[['class_label','Run','Event','M','eta1','eta2','Q1','Q2','phi1','phi2','px1 ','px2','py1','py2','pz1','pz2','pt1','pt2','E1','E2']]
+shuffled_total.to_csv('labeled_datafile.csv',header=None, index=False)
+#######################################################################
+
+
+
+#######################################################################
+#makine ogrenimi
+
+#makine ogrenimi icin ilgili kutuphanelerin listelenmesi
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+#metrik kutuphanelerinin eklenmesi
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, roc_auc_score
+
+#makine ogrenimi icin ozelliklerin ve etiketlerin ayrilmasi
+X = shuffled_total.drop(['class_label'], axis=1)
+X.shape
+#(99915, 19)
+'''
+burada veri setindeki tum ozellikler MO modelinde kullanilacaktir eger ozellik secmek istersek kullanilmayacak kisim cikartilmalidir
+ornegin
+X = shuffled_total.drop(['class_label','Run'], axis=1)
+yapildiginda sonuc degisecektir.
+'''
+
+y = (shuffled_total['class_label']).astype(int)
+y.shape
+#(99915,)
+
+print('Dimensions of feature matrix X ', X.shape)
+print('Dimensions of target vector y  ', y.shape)
+
+
+#pozitif ve negatif sayisini ekrana yazdirma
+print('nTotal number of events in data sample %d' % X.shape[0])
+print('Number of signal eventspositive class in data sample %d (%.2f percent)' % (y[y==1].shape[0], y[y==1].shape[0]))
+print('Number of backgr eventsnegative class in data sample %d (%.2f percent)' % (y[y==0].shape[0], y[y==0].shape[0]))
+'''
+Total number of events in data sample 99915
+Number of signal eventspositive class in data sample 56969 (57.02 percent)
+Number of backgr eventsnegative class in data sample 42946 (42.98 percent)
+'''
+
+#egitim ve test veri setinin ayrilmasi
+X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                    test_size=0.25,
+                                                    random_state=42)
+
+print('Number of training samples   %d' % X_train.shape[0])
+#print('Number of validation samples %d' % X_val.shape[0])
+print('Number of test samples       %d' % X_test.shape[0])
+'''
+Number of training samples   74936
+Number of test samples       24979
+'''
+
+
+
+#rastgele orman modeli ve hiperparametreleri
+#httpsscikit-learn.orgstablemodulesgeneratedsklearn.ensemble.RandomForestClassifier.html
+'''
+RandomForestClassifier(n_estimators=,
+                             criterion=,
+                             max_depth=,
+                             min_samples_split=2,
+                             min_samples_leaf=1,
+                             min_weight_fraction_leaf=0.0,
+                             max_features='auto',
+                             max_leaf_nodes=None,
+                             min_impurity_split=1e-07,
+                             bootstrap=True,
+                             oob_score=False,
+                             n_jobs=-1,
+                             random_state=44,
+                             verbose=0,
+                             warm_start=False,
+                             class_weight=None)
+'''
+#uygulanacak modelin tanimlanmasi
+clf = RandomForestClassifier(n_estimators=100)
+
+# modelin egitilmesi
+clf.fit(X_train, y_train)
+
+# egitim veri setinden elde edilen tahminler
+train_predictions = clf.predict(X_train) #egitim setindeki siniflarin tahminleri
+train_probabilities = clf.predict_proba(X_train)[:, 1] #egitim setindeki siniflarin tahmin edilme olasiligi
+
+# test veri setinden elde edilen tahminler
+test_predictions = clf.predict(X_test) #test setindeki siniflarin tahminleri
+test_probabilities = clf.predict_proba(X_test)[:, 1] #test setindeki siniflarin tahmin edilme olasiligi
+
+# egitim ve test veri setininde model dogrulugunun hesaplanmasi
+#httpsscikit-learn.orgstablemodulesgeneratedsklearn.metrics.accuracy_score.html#sklearn.metrics.accuracy_score
+
+train_accuracy = accuracy_score(y_train, train_predictions) # egitim
+test_accuracy = accuracy_score(y_test, test_predictions) # test
+
+# egitim ve test veri setlerinden modelin hata matrisinin hesaplanmasi
+#httpsscikit-learn.orgstablemodulesgeneratedsklearn.metrics.confusion_matrix.html#sklearn.metrics.confusion_matrix
+train_conf_matrix = confusion_matrix(y_train, train_predictions) # egitim
+test_conf_matrix = confusion_matrix(y_test, test_predictions) # test
+
+# modelin egitim ve test veri setindeki performansinin duyarlilik, kesinlik ve f1 skoru degerlerinin listelenmesi
+train_class_report = classification_report(y_train, train_predictions) # egitim
+test_class_report = classification_report(y_test, test_predictions) # test
+
+# Egitim ve test veri analizleri ROC Egrileirnin altinda kalan alan hesaplamasi
+train_roc_auc = roc_auc_score(y_train, train_probabilities) # egitim
+test_roc_auc = roc_auc_score(y_test, test_probabilities) # test
+
+#ROC egrisinin cizilmesi
+train_fpr, train_tpr, _ = roc_curve(y_train, train_probabilities)
+test_fpr, test_tpr, _ = roc_curve(y_test, test_probabilities)
+
+# Plot ROC Curve
+plt.figure()
+plt.plot(train_fpr, train_tpr, label=f'Train ROC Curve (AUC = {train_roc_auc:.2f})')
+# egitim veri analizi sonucu elde edilen egrisi
+
+plt.plot(test_fpr, test_tpr, label=f'Test ROC Curve (AUC = {test_roc_auc:.2})') # test veri analizi sonucu elde edilen egrisi
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc='lower right')
+plt.show()
+
+# Elde edilen sonuclarin degerlendirilmesi
+
+print("Train Accuracy", train_accuracy)
+print("Train Confusion Matrix\n", train_conf_matrix)
+print("Train Classification Report\n", train_class_report)
+print("Train ROC AUC", train_roc_auc)
+
+print("\nTest Accuracy", test_accuracy)
+print("Test Confusion Matrix\n", test_conf_matrix)
+print("Test Classification Report\n", test_class_report)
+print("Test ROC AUC", test_roc_auc)
+
+#######################################################################
